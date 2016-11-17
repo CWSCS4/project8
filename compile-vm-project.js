@@ -322,7 +322,7 @@ const RETURN_INSTRUCTIONS = POP_INTO_D
 		//Save where SP needs to be reset for caller
 		'@ARG',
 		'D=M+1',
-		'@R13',
+		'@SP',
 		'M=D',
 		//Get location after last save value
 		'@LCL',
@@ -333,11 +333,6 @@ const RETURN_INSTRUCTIONS = POP_INTO_D
 	.concat(decrementR14AndLoadInstructions({saveLocation: '@ARG', useDLocation: false}))
 	.concat(decrementR14AndLoadInstructions({saveLocation: '@LCL', useDLocation: false}))
 	.concat([
-		//Reset SP
-		'@R13',
-		'D=M',
-		'@SP',
-		'M=D',
 		//Reset program location
 		'@R14',
 		'A=M-1',
