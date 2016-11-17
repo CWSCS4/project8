@@ -26,7 +26,7 @@ function incrementR14AndSaveInstructions(loadLocation) {
 let callLabelID = 0
 class CallInstruction {
 	constructor([functionName, args]) {
-		const returnLabel = 'CALL_' + String(callLabelID++)
+		const returnLabel = 'CALL_' + functionName + '_' + String(callLabelID++)
 		let r14Initial
 		if (args === '0') r14Initial = 'D+1' //leave a space for the return value from callee
 		else r14Initial = 'D'
@@ -377,12 +377,10 @@ const MEMORY_INSTRUCTION_CLASSES = {
 }
 function initializationInstructions() {
 	const instructions = [
-		/*'@256',
+		'@261', //256 + 5 because the proposed implementation needlessly adds save values before invoking Sys.init
 		'D=A',
-		'@SP',
-		'M=D',
-		'@LCL',
-		'M=D'*/
+		'@LCL', //no need to set SP since it is set automatically in function initialization relative to LCL
+		'M=D'
 	]
 	if (FunctionInstruction.foundInit) {
 		instructions.push(
