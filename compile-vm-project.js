@@ -3,24 +3,25 @@ const fs = require('fs')
 const path = require('path')
 const Simultaneity = require(__dirname + '/simultaneity.js')
 
-if (process.argv.length !== 3) throw new Error('Incorrect syntax. Use: ./compile-vm.js FILE.vm|DIR')
+if (process.argv.length !== 3) throw new Error('Incorrect syntax. Use: ./compile-vm.js DIR')
 
 const POP_INTO_D = [
 	'@SP',
-	'AM=M-1',
-	'D=M'
+	'AM=M-1', //A = --SP
+	'D=M' //D = *(--SP)
 ]
 const LOAD_STACK_TOP = [
 	'@SP',
-	'A=M-1'
+	'A=M-1' //A = SP - 1
 ]
+const SAVED_VALUE_LOCATION_TEMP = '@R14'
 function incrementR14AndSaveInstructions(loadLocation) {
 	return [
 		loadLocation,
-		'D=M',
-		'@R14',
-		'AM=M+1',
-		'M=D'
+		'D=M', //D = *loadLocation
+		SAVED_VALUE_LOCATION_TEMP,
+		'AM=M+1', //A = ++SAVED_VALUE_LOCATION
+		'M=D' //*(++SAVED_VALUE_LOCATION) = *loadLocation
 	]
 }
 let callLabelID = 0
@@ -33,15 +34,15 @@ class CallInstruction {
 		this.instructions = [
 			//Get location of save segment into R14
 			'@SP',
-			'D=M',
-			'@R14',
-			'M=' + r14Initial,
+			'D=M', //D = SP
+			SAVED_VALUE_LOCATION_TEMP,
+			'M=' + r14Initial, //SAVED_VALUE_LOCATION = SP or SP + 1
 			//Add return address to save segment
 			'@' + returnLabel,
-			'D=A',
-			'@R14',
-			'A=M',
-			'M=D'
+			'D=A', //D = returnLabel
+			SAVED_VALUE_LOCATION_TEMP,
+			'A=M', //A = SAVED_VALUE_LOCATION
+			'M=D' //*SAVED_VALUE_LOCATION = returnLabel
 		].concat(incrementR14AndSaveInstructions('@LCL'))
 		.concat(incrementR14AndSaveInstructions('@ARG'))
 		.concat(incrementR14AndSaveInstructions('@THIS'))
@@ -49,16 +50,16 @@ class CallInstruction {
 		.concat([
 			//Set @ARG for callee to be SP - args
 			'@SP',
-			'D=M',
+			'D=M', //D = SP
 			'@' + args,
-			'D=D-A',
+			'D=D-A', //D = SP - args
 			'@ARG',
-			'M=D',
+			'M=D', //ARG = SP - args
 			//Set @LCL for callee to be SP + 5
-			'@R14',
-			'D=M+1',
+			SAVED_VALUE_LOCATION_TEMP,
+			'D=M+1', //D = SAVED_VALUE_LOCATION + 1
 			'@LCL',
-			'M=D',
+			'M=D', //LCL = SAVED_VALUE_LOCATION + 1
 			//Call function
 			'@' + functionName,
 			'0;JMP',
@@ -77,15 +78,15 @@ function comparisonInstructions(jmpTrue) {
 		.concat([
 			'@' + jmpTrueLabel,
 			'D;J' + jmpTrue,
-			'D=0',
+			'D=0', //if false, D = 0
 			'@' + endLabel,
 			'0;JMP',
 			'(' + jmpTrueLabel + ')',
-			'D=-1',
+			'D=-1', //if true, D = -1
 			'(' + endLabel + ')'
 		])
 		.concat(LOAD_STACK_TOP)
-		.concat(['M=D'])
+		.concat(['M=D']) //*(SP - 1) = (0 or -1)
 }
 const FUNCTION_NAMES = new Set
 const SYS_INIT = 'Sys.init'
@@ -94,19 +95,24 @@ class FunctionInstruction {
 		localVariables = Number(localVariables)
 		this.instructions = [
 			'(' + name + ')',
-			'@LCL',
-			'A=M'
+			'@LCL'
 		]
-		for (let i = 0; i < localVariables; i++) {
-			this.instructions.push(
-				'M=0',
-				'A=A+1'
-			)
+		if (localVariables) {
+			this.instructions.push('A=M') //A = LCL
+			for (let i = 0; i < localVariables; i++) {
+				let newLocationStore
+				if (i === localVariables - 1) newLocationStore = 'D'
+				else newLocationStore = 'A'
+				this.instructions.push(
+					'M=0', //*(LCL + i) = 0
+					newLocationStore + '=A+1' //i++ first times, then D = LCL + localVariables last time
+				)
+			}
 		}
+		else this.instructions.push('D=M') //D = LCL
 		this.instructions.push(
-			'D=A',
 			'@SP',
-			'M=D'
+			'M=D' //SP = LCL + localVariables
 		)
 		FUNCTION_NAMES.add(name)
 		this.functionName = name
@@ -182,10 +188,10 @@ function getVariableSegmentStartIntoD(segment) {
 	}
 	return [
 		segmentStartPointer,
-		'D=M'
+		'D=M' //D = ARG or LCL or THIS or THAT
 	]
 }
-const TEMP_SEGMENT_OFFSET = 5
+const TEMP_SEGMENT_START = 5
 function getPositionIntoD({positionArguments, className}) {
 	const [segment, offset] = positionArguments
 	switch (segment) {
@@ -197,7 +203,7 @@ function getPositionIntoD({positionArguments, className}) {
 			if (offset !== '0') {
 				instructions.push(
 					'@' + offset,
-					'D=D+A'
+					'D=D+A' //D = segmentStart + offset
 				)
 			}
 			return instructions
@@ -210,8 +216,8 @@ function getPositionIntoD({positionArguments, className}) {
 		}
 		case 'temp': {
 			return [
-				'@' + String(TEMP_SEGMENT_OFFSET + Number(offset)),
-				'D=A'
+				'@' + String(TEMP_SEGMENT_START + Number(offset)),
+				'D=A' //D = TEMP_SEGMENT_START + offset
 			]
 		}
 		case 'pointer': {
@@ -231,7 +237,7 @@ function getPositionIntoD({positionArguments, className}) {
 			}
 			return [
 				position,
-				'D=A'
+				'D=A' //D = &THIS or &THAT
 			]
 		}
 		default: {
@@ -245,13 +251,13 @@ class PopInstruction {
 		this.instructions = getPositionIntoD({positionArguments, className})
 			.concat([
 				POP_TEMP,
-				'M=D'
+				'M=D' //POP_TEMP = position
 			])
 			.concat(POP_INTO_D)
 			.concat([
 				POP_TEMP,
-				'A=M',
-				'M=D'
+				'A=M', //A = position
+				'M=D' //*position = popped
 			])
 	}
 	toHack() {
@@ -264,7 +270,7 @@ function getValueIntoD({positionArguments, className}) {
 		case 'constant': {
 			return [
 				'@' + offset,
-				'D=A'
+				'D=A' //D = offset
 			]
 			break
 		}
@@ -292,9 +298,9 @@ class PushInstruction {
 		this.instructions = getValueIntoD({positionArguments, className})
 			.concat([
 				'@SP',
-				'M=M+1',
-				'A=M-1',
-				'M=D'
+				'M=M+1', //SP++
+				'A=M-1', //A = SP - 1 (what SP was before incrementing)
+				'M=D' //*(SP - 1) = D
 			])
 	}
 	toHack() {
@@ -306,27 +312,26 @@ function decrementR14AndLoadInstructions({saveLocation, useDLocation}) {
 	if (useDLocation) source = 'D'
 	else source = 'M'
 	return [
-		'@R14',
-		'AM=' + source + '-1',
-		'D=M',
+		SAVED_VALUE_LOCATION_TEMP,
+		'AM=' + source + '-1', //A = --SAVED_VALUE_LOCATION (or D-1)
+		'D=M', //D = *(--SAVED_VALUE_LOCATION)
 		saveLocation,
-		'M=D'
+		'M=D' //*saveLocation = *(--SAVED_VALUE_LOCATION)
 	]
 }
 const RETURN_INSTRUCTIONS = POP_INTO_D
 	.concat([
 		//Copy return value
 		'@ARG',
-		'A=M',
-		'M=D',
+		'A=M', //A=ARG
+		'M=D', //*ARG = pop()
 		//Save where SP needs to be reset for caller
-		'@ARG',
-		'D=M+1',
+		'D=A+1', //D = ARG + 1
 		'@SP',
-		'M=D',
+		'M=D', //SP = ARG + 1
 		//Get location after last save value
 		'@LCL',
-		'D=M'
+		'D=M' //D = LCL
 	])
 	.concat(decrementR14AndLoadInstructions({saveLocation: '@THAT', useDLocation: true}))
 	.concat(decrementR14AndLoadInstructions({saveLocation: '@THIS', useDLocation: false}))
@@ -334,9 +339,9 @@ const RETURN_INSTRUCTIONS = POP_INTO_D
 	.concat(decrementR14AndLoadInstructions({saveLocation: '@LCL', useDLocation: false}))
 	.concat([
 		//Reset program location
-		'@R14',
-		'A=M-1',
-		'A=M',
+		SAVED_VALUE_LOCATION_TEMP,
+		'A=M-1', //A = SAVED_VALUE_LOCATION - 1
+		'A=M', //A = *(SAVED_VALUE_LOCATION - 1)
 		'0;JMP'
 	])
 function oneOperandArithmetic(operator) {
@@ -346,8 +351,8 @@ function oneOperandArithmetic(operator) {
 function twoOperandArithmetic({operator, destination}) {
 	return POP_INTO_D
 		.concat([
-			'A=A-1',
-			destination + '=M' + operator + 'D'
+			'A=A-1', //A = SP - 1
+			destination + '=M' + operator + 'D' //destination = *(SP - 1) [operator] *SP
 		])
 }
 function twoOperandStackArithmetic(operator) {
@@ -373,9 +378,9 @@ const MEMORY_INSTRUCTION_CLASSES = {
 function initializationInstructions() {
 	const instructions = [
 		'@261', //256 + 5 because the proposed implementation needlessly adds save values before invoking Sys.init
-		'D=A',
-		'@LCL', //no need to set SP since it is set automatically in function initialization relative to LCL
-		'M=D'
+		'D=A', //D = 261
+		'@LCL', //no need to set SP since it is set automatically in function initialization based off LCL
+		'M=D' //LCL = 261
 	]
 	if (FunctionInstruction.foundInit) {
 		instructions.push(
@@ -414,7 +419,8 @@ function loadFile(fullFile, callback) {
 	inStream.on('error', err => {
 		throw new Error('Could not find file: ' + fullFile)
 	})
-	const className = fullFile.substring(fullFile.lastIndexOf(path.sep) + 1)
+	const fileName = fullFile.substring(fullFile.lastIndexOf(path.sep) + 1)
+	const className = fileName.substring(0, fileName.length - VM.length)
 	const EMPTY_LINE = /^\s*(?:\/\/.*)?$/
 	const fileInstructions = []
 	let currentFunction
@@ -473,7 +479,9 @@ function loadFile(fullFile, callback) {
 	getLines(inStream, line => {
 		line = line.trim()
 		if (EMPTY_LINE.test(line)) return
-		if (fileInstructions.length === 0 && !line.startsWith('function')) { //if first line is not a function call, assume it is just a single function body that wasn't wrapped in anything
+		//If first line is not a function call, assume project is a single function body
+		//that wasn't wrapped in anything, and add a Sys.init label
+		if (fileInstructions.length === 0 && !line.startsWith('function')) {
 			fileInstructions.push('(' + SYS_INIT + ')')
 			currentFunction = SYS_INIT
 			FUNCTION_NAMES.add(SYS_INIT)
@@ -485,7 +493,7 @@ function loadFile(fullFile, callback) {
 	})
 }
 function writeCombinedInstructions() {
-	const outStream = fs.createWriteStream(rootFile + ASM)
+	const outStream = fs.createWriteStream(outFile)
 	function writeInstructions(instructions) {
 		for (const line of instructions) {
 			outStream.write(line)
@@ -497,22 +505,15 @@ function writeCombinedInstructions() {
 	outStream.end()
 }
 const file = path.resolve(process.argv[2])
-let rootFile
-if (file.endsWith(VM)) {
-	rootFile = file.substring(0, file.length - VM.length)
-	loadFile(file, writeCombinedInstructions)
-}
-else {
-	fs.readdir(file, (err, files) => {
-		if (err) throw new Error('Not a directory or VM file: ' + file)
-		rootFile = file + path.sep + file.substring(file.lastIndexOf(path.sep) + 1)
-		const filesS = new Simultaneity
-		for (const vmFile of files) {
-			if (!vmFile.endsWith(VM)) continue
-			filesS.addTask(() => {
-				loadFile(file + path.sep + vmFile, () => filesS.taskFinished())
-			})
-		}
-		filesS.callback(writeCombinedInstructions)
-	})
-}
+const outFile = file + path.sep + file.substring(file.lastIndexOf(path.sep) + 1) + ASM
+fs.readdir(file, (err, files) => {
+	if (err) throw new Error('Not a directory: ' + file)
+	const filesS = new Simultaneity
+	for (const vmFile of files) {
+		if (!vmFile.endsWith(VM)) continue
+		filesS.addTask(() => {
+			loadFile(file + path.sep + vmFile, () => filesS.taskFinished())
+		})
+	}
+	filesS.callback(writeCombinedInstructions)
+})
