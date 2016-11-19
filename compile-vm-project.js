@@ -25,6 +25,14 @@ function incrementR14AndSaveInstructions(loadLocation) {
 	]
 }
 let callLabelID = 0
+/*
+	call is responsible for:
+	- Pushing return location, LCL, ARGS, THIS, and THAT onto global stack
+	- Setting ARG to location of first arg on stack
+		- Necessary even if args == 0 since args specifies where to put the return value
+	- Setting LCL to top of global stack
+	- Jumping to callee
+*/
 class CallInstruction {
 	constructor([functionName, args]) {
 		const returnLabel = 'CALL_' + functionName + '_' + String(callLabelID++)
@@ -47,12 +55,18 @@ class CallInstruction {
 		.concat(incrementR14AndSaveInstructions('@ARG'))
 		.concat(incrementR14AndSaveInstructions('@THIS'))
 		.concat(incrementR14AndSaveInstructions('@THAT'))
-		.concat([
-			//Set @ARG for callee to be SP - args
-			'@SP',
-			'D=M', //D = SP
-			'@' + args,
-			'D=D-A', //D = SP - args
+		//Set @ARG for callee to be SP - args
+		this.instructions.push('@SP')
+		if (args === '0') this.instructions.push('D=M') //D = SP - args
+		else if (args === '1') this.instructions.push('D=M-1') //D = SP - args
+		else {
+			this.instructions.push(
+				'D=M', //D = SP
+				'@' + args,
+				'D=D-A' //D = SP - args
+			)
+		}
+		this.instructions.push(
 			'@ARG',
 			'M=D', //ARG = SP - args
 			//Set @LCL for callee to be SP + 5
@@ -64,7 +78,7 @@ class CallInstruction {
 			'@' + functionName,
 			'0;JMP',
 			'(' + returnLabel + ')'
-		])
+		)
 	}
 	toHack() {
 		return this.instructions
@@ -88,8 +102,12 @@ function comparisonInstructions(jmpTrue) {
 		.concat(LOAD_STACK_TOP)
 		.concat(['M=D']) //*(SP - 1) = (0 or -1)
 }
-const FUNCTION_NAMES = new Set
 const SYS_INIT = 'Sys.init'
+/*
+	function is responsible for:
+	- Pushing 0 onto global stack for each local variable
+	- Setting SP to location after last local variable
+*/
 class FunctionInstruction {
 	constructor([name, localVariables]) {
 		localVariables = Number(localVariables)
@@ -114,7 +132,6 @@ class FunctionInstruction {
 			'@SP',
 			'M=D' //SP = LCL + localVariables
 		)
-		FUNCTION_NAMES.add(name)
 		this.functionName = name
 	}
 	get name() {
@@ -122,11 +139,6 @@ class FunctionInstruction {
 	}
 	toHack() {
 		return this.instructions
-	}
-	static get foundInit() {
-		if (FUNCTION_NAMES.has(SYS_INIT)) return true
-		if (FUNCTION_NAMES.size !== 1) throw new Error('Expected only 1 function in project')
-		return false
 	}
 }
 function getLabel({currentFunction, label}) {
@@ -200,11 +212,18 @@ function getPositionIntoD({positionArguments, className}) {
 		case 'this':
 		case 'that': {
 			const instructions = getVariableSegmentStartIntoD(segment)
-			if (offset !== '0') {
-				instructions.push(
-					'@' + offset,
-					'D=D+A' //D = segmentStart + offset
-				)
+			switch (offset) {
+				case '0': break
+				case '1': {
+					instructions[instructions.length - 1] += '+1' //D = [ARG or LCL or THIS or THAT] + 1
+					break
+				}
+				default: {
+					instructions.push(
+						'@' + offset,
+						'D=D+A' //D = segmentStart + offset
+					)
+				}
 			}
 			return instructions
 		}
@@ -268,11 +287,16 @@ function getValueIntoD({positionArguments, className}) {
 	const [segment, offset] = positionArguments
 	switch (segment) {
 		case 'constant': {
-			return [
-				'@' + offset,
-				'D=A' //D = offset
-			]
-			break
+			switch (offset) {
+				case '0': return ['D=0'] //D = offset
+				case '1': return ['D=1'] //D = offset
+				default: {
+					return [
+						'@' + offset,
+						'D=A' //D = offset
+					]
+				}
+			}
 		}
 		case 'argument':
 		case 'local':
@@ -319,6 +343,12 @@ function decrementR14AndLoadInstructions({saveLocation, useDLocation}) {
 		'M=D' //*saveLocation = *(--SAVED_VALUE_LOCATION)
 	]
 }
+/*
+	return is responsible for:
+	- Copying top of stack onto top of stack of caller
+	- Restoring LCL-THAT of caller
+	- Jumping back to caller
+*/
 const RETURN_INSTRUCTIONS = POP_INTO_D
 	.concat([
 		//Copy return value
@@ -375,21 +405,22 @@ const MEMORY_INSTRUCTION_CLASSES = {
 	'pop': PopInstruction,
 	'push': PushInstruction
 }
-function initializationInstructions() {
-	const instructions = [
-		'@261', //256 + 5 because the proposed implementation needlessly adds save values before invoking Sys.init
-		'D=A', //D = 261
-		'@LCL', //no need to set SP since it is set automatically in function initialization based off LCL
-		'M=D' //LCL = 261
-	]
-	if (FunctionInstruction.foundInit) {
-		instructions.push(
-			'@' + SYS_INIT,
-			'0;JMP'
-		)
-	}
-	return instructions
-}
+/*
+	Effectively calls Sys.init() except
+	- No need to put save values onto global stack because Sys.init() can't return
+	- No need to set ARG because Sys.init() gets no args and can't return a value
+	So only has to
+	- Set LCL to top of global stack
+	- Jump to Sys.init()
+*/
+const INITIALIZATION_INSTRUCTIONS = [
+	'@261', //256 + 5 because the proposed implementation needlessly adds save values before invoking Sys.init()
+	'D=A', //D = 261
+	'@LCL', //no need to set SP since it is set automatically in function initialization based off LCL
+	'M=D', //LCL = 261
+	'@' + SYS_INIT,
+	'0;JMP'
+]
 
 function getLines(stream, lineCallback, endCallback) {
 	let residual = ''
@@ -484,7 +515,6 @@ function loadFile(fullFile, callback) {
 		if (fileInstructions.length === 0 && !line.startsWith('function')) {
 			fileInstructions.push('(' + SYS_INIT + ')')
 			currentFunction = SYS_INIT
-			FUNCTION_NAMES.add(SYS_INIT)
 		}
 		parseLine(line)
 	}, () => {
@@ -500,7 +530,7 @@ function writeCombinedInstructions() {
 			outStream.write('\n')
 		}
 	}
-	writeInstructions(initializationInstructions())
+	writeInstructions(INITIALIZATION_INSTRUCTIONS)
 	for (const fileInstructions of filesInstructions) writeInstructions(fileInstructions)
 	outStream.end()
 }
