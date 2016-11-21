@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const Simultaneity = require(__dirname + '/simultaneity.js')
 
-if (process.argv.length !== 3) throw new Error('Incorrect syntax. Use: ./compile-vm.js DIR')
+if (process.argv.length !== 3) throw new Error('Incorrect syntax. Use: ./compile-vm-project.js DIR')
 
 const POP_INTO_D = [
 	'@SP',
@@ -35,7 +35,7 @@ let callLabelID = 0
 */
 class CallInstruction {
 	constructor([functionName, args]) {
-		const returnLabel = 'CALL_' + functionName + '_' + String(callLabelID++)
+		const returnLabel = 'AFTER_CALL_' + functionName + '_' + String(callLabelID++)
 		let r14Initial
 		if (args === '0') r14Initial = 'D+1' //leave a space for the return value from callee
 		else r14Initial = 'D'
@@ -56,15 +56,23 @@ class CallInstruction {
 		.concat(incrementR14AndSaveInstructions('@THIS'))
 		.concat(incrementR14AndSaveInstructions('@THAT'))
 		//Set @ARG for callee to be SP - args
-		this.instructions.push('@SP')
-		if (args === '0') this.instructions.push('D=M') //D = SP - args
-		else if (args === '1') this.instructions.push('D=M-1') //D = SP - args
-		else {
-			this.instructions.push(
-				'D=M', //D = SP
-				'@' + args,
-				'D=D-A' //D = SP - args
-			)
+		.concat(['@SP'])
+		switch (args) {
+			case '0': {
+				this.instructions.push('D=M') //D = SP - args
+				break
+			}
+			case '1': {
+				this.instructions.push('D=M-1') //D = SP - args
+				break
+			}
+			default: {
+				this.instructions.push(
+					'D=M', //D = SP
+					'@' + args,
+					'D=D-A' //D = SP - args
+				)
+			}
 		}
 		this.instructions.push(
 			'@ARG',
@@ -92,11 +100,11 @@ function comparisonInstructions(jmpTrue) {
 		.concat([
 			'@' + jmpTrueLabel,
 			'D;J' + jmpTrue,
-			'D=0', //if false, D = 0
-			'@' + endLabel,
-			'0;JMP',
+				'D=0', //if false, D = 0
+				'@' + endLabel,
+				'0;JMP',
 			'(' + jmpTrueLabel + ')',
-			'D=-1', //if true, D = -1
+				'D=-1', //if true, D = -1
 			'(' + endLabel + ')'
 		])
 		.concat(LOAD_STACK_TOP)
@@ -194,9 +202,7 @@ function getVariableSegmentStartIntoD(segment) {
 			segmentStartPointer = '@THAT'
 			break
 		}
-		default: {
-			throw new Error('Segment "' + segment + '" is not a variable segment')
-		}
+		default: throw new Error('Segment "' + segment + '" is not a variable segment')
 	}
 	return [
 		segmentStartPointer,
@@ -250,18 +256,14 @@ function getPositionIntoD({positionArguments, className}) {
 					position = '@THAT'
 					break
 				}
-				default: {
-					throw new Error('Unknown pointer offset: ' + offset)
-				}
+				default: throw new Error('Unknown pointer offset: ' + offset)
 			}
 			return [
 				position,
 				'D=A' //D = &THIS or &THAT
 			]
 		}
-		default: {
-			throw new Error('Unknown segment: "' + segment + '"')
-		}
+		default: throw new Error('Unknown segment: "' + segment + '"')
 	}
 }
 const POP_TEMP = '@R15'
@@ -312,9 +314,7 @@ function getValueIntoD({positionArguments, className}) {
 			intoDInstructions.push('D=M')
 			return intoDInstructions
 		}
-		default: {
-			throw new Error('Unknown segment: "' + segment + '"')
-		}
+		default: throw new Error('Unknown segment: "' + segment + '"')
 	}
 }
 class PushInstruction {
@@ -444,6 +444,7 @@ function getLines(stream, lineCallback, endCallback) {
 
 const VM = '.vm'
 const ASM = '.asm'
+const EMPTY_LINE = /^\s*(?:\/\/.*)?$/
 const filesInstructions = new Set //set of arrays of instructions for each file
 function loadFile(fullFile, callback) {
 	const inStream = fs.createReadStream(fullFile)
@@ -452,7 +453,6 @@ function loadFile(fullFile, callback) {
 	})
 	const fileName = fullFile.substring(fullFile.lastIndexOf(path.sep) + 1)
 	const className = fileName.substring(0, fileName.length - VM.length)
-	const EMPTY_LINE = /^\s*(?:\/\/.*)?$/
 	const fileInstructions = []
 	let currentFunction
 	function parseLine(line) {
@@ -539,11 +539,14 @@ const outFile = file + path.sep + file.substring(file.lastIndexOf(path.sep) + 1)
 fs.readdir(file, (err, files) => {
 	if (err) throw new Error('Not a directory: ' + file)
 	const filesS = new Simultaneity
+	let foundFile = false
 	for (const vmFile of files) {
 		if (!vmFile.endsWith(VM)) continue
 		filesS.addTask(() => {
 			loadFile(file + path.sep + vmFile, () => filesS.taskFinished())
 		})
+		foundFile = true
 	}
+	if (!foundFile) throw new Error('No .vm files found in ' + file)
 	filesS.callback(writeCombinedInstructions)
 })
