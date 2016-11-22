@@ -28,7 +28,7 @@ def accessLoc(inputC, writeTo, typeC): #inputC and writeTo are the same as in de
 
 	return "D"
 
-def decode(inputC,writeTo): #gets the desired address/value from inputC case by case depending on whether writeTo is true/false. writeTo signifies either pop or push
+def decode(inputC,writeTo, pathInput): #gets the desired address/value from inputC case by case depending on whether writeTo is true/false. writeTo signifies either pop or push
 	if inputC[0]=="local": #LCL, ARG, THIS and THAT are first accessed in memory by passing in relevant arguments to accessLoc() to get the value that is being stored in the respective register
 		return accessLoc(inputC, writeTo, "LCL")
 	elif inputC[0]=="argument":
@@ -67,7 +67,7 @@ def decode(inputC,writeTo): #gets the desired address/value from inputC case by 
 		print "why are you trying to write to a constant"
 
 	elif inputC[0]=="static": #static variables are allocated their own space using path from command line arguments.
-		tempname = path.split("/")[-1].split(".")[0]
+		tempname = pathInput.split("/")[-1].split(".")[0]
 		tempname += "."
 		if not writeTo:
 			print "@"+tempname+inputC[1]
@@ -75,16 +75,16 @@ def decode(inputC,writeTo): #gets the desired address/value from inputC case by 
 			return "D"
 		return tempname+inputC[1]
 
-def pushC(inputC): #loads SP value and increments it while writing a decoded input to the next SP address
-	temp = str(decode(inputC[1:], False))
+def pushC(inputC, pathInput): #loads SP value and increments it while writing a decoded input to the next SP address
+	temp = str(decode(inputC[1:], False, pathInput))
 	print "@SP"
 	print "A=M"
 	print "M="+temp
 	print "@SP"
 	print "M=M+1"
 
-def popC(inputC): #decrements from SP and writes previous value to specified address
-	temp = str(decode(inputC[1:], True))
+def popC(inputC, pathInput): #decrements from SP and writes previous value to specified address
+	temp = str(decode(inputC[1:], True), pathInput)
 	print "@R15"
 	if temp == "D":
 		print "M=D"
@@ -127,7 +127,7 @@ def notC(inputC): #loads SP and takes the bitwise ! of its current value. I supp
 	print "A=D"
 	print "M=!M"
 
-def compC(input, typeC): #general comparative helper function. typeC is passed in through the main lood and represents an assembler-friendly versin of the desired comparison
+def compC(inputC, typeC): #general comparative helper function. typeC is passed in through the main lood and represents an assembler-friendly versin of the desired comparison
 	global jumpct
 	decrementSP()
 	print "D=M"
@@ -149,9 +149,32 @@ def compC(input, typeC): #general comparative helper function. typeC is passed i
 	print "M=M+1"
 	jumpct+=1
 
+def labelC(inputC, fInput):
+	print "("+fInput+"$"+inputC+")"
+
+def gotoC(inputC, fInput):
+	print "@"+fInput+"$"+inputC
+	print "0;JMP"
+
+def ifGotoC(inputC, fInput):
+	decrementSP()
+	print "D=M"
+	print "@"+fInput+"$"+inputC
+	print "D;JNE"
+
+def functionC(inputC):
+	currentF = inputC[1]
+	for i in range(int(inputC[2])):
+		pushC(0,"notImportant")
+
+def callC(inputC):
+	pushC(ret, "")
+	pushC(LCL, "")
+
 pathDir = str(sys.argv[1])
 listOfFiles =  glob.glob(pathDir+"*.vm")
 jumpct = 0
+currentF = "Sys.init"
 print "@256"
 print "D=A"
 print "@SP"
@@ -166,11 +189,12 @@ for path in listOfFiles:
 					pass
 				current=line.split(" ")
 				current = filter(lambda x:(x!=""),current)
-				typeof = current[0].rstrip() #calls function based on type of command
+				current = map(lambda x: x.rstrip(),current)
+				typeof = current[0] #calls function based on type of command
 				if typeof == "push":
-					pushC(current)
+					pushC(current,path)
 				elif typeof == "pop":
-					popC(current)
+					popC(current,path)
 				elif typeof == "add":
 					arithC(current,"+")
 				elif typeof == "sub":
@@ -189,3 +213,13 @@ for path in listOfFiles:
 					arithC(current,"|")
 				elif typeof == "not":
 					notC(current)
+				elif typeof == "label":
+					labelC(current,currentF)
+				elif typeof == "goto":
+					gotoC(current, currentF)
+				elif typeof == "if-goto":
+					ifGotoC(current, currentF)
+				elif typeof == "call":
+					callC(current)
+				elif typeof == "function":
+					functionC(current)
