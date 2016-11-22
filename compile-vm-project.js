@@ -110,7 +110,6 @@ function comparisonInstructions(jmpTrue) {
 		.concat(LOAD_STACK_TOP)
 		.concat(['M=D']) //*(SP - 1) = (0 or -1)
 }
-const SYS_INIT = 'Sys.init'
 /*
 	function is responsible for:
 	- Pushing 0 onto global stack for each local variable
@@ -210,8 +209,7 @@ function getVariableSegmentStartIntoD(segment) {
 	]
 }
 const TEMP_SEGMENT_START = 5
-function getPositionIntoD({positionArguments, className}) {
-	const [segment, offset] = positionArguments
+function getPositionIntoD({positionArguments: [segment, offset], className}) {
 	switch (segment) {
 		case 'argument':
 		case 'local':
@@ -309,8 +307,10 @@ function getValueIntoD({positionArguments, className}) {
 		case 'temp': {
 			const intoDInstructions = getPositionIntoD({positionArguments, className})
 			const lastInstruction = intoDInstructions[intoDInstructions.length - 1]
+			//Put position into A instead of D so that it can be dereferenced
 			if (lastInstruction === 'D=A') intoDInstructions.pop()
 			else intoDInstructions[intoDInstructions.length - 1] = lastInstruction.replace('D=', 'A=')
+			//D = *position
 			intoDInstructions.push('D=M')
 			return intoDInstructions
 		}
@@ -346,7 +346,8 @@ function decrementR14AndLoadInstructions({saveLocation, useDLocation}) {
 /*
 	return is responsible for:
 	- Copying top of stack onto top of stack of caller
-	- Restoring LCL-THAT of caller
+	- Setting SP to point after the returned value
+	- Restoring LCL, ARG, THIS, and THAT of caller
 	- Jumping back to caller
 */
 const RETURN_INSTRUCTIONS = POP_INTO_D
@@ -405,6 +406,7 @@ const MEMORY_INSTRUCTION_CLASSES = {
 	'pop': PopInstruction,
 	'push': PushInstruction
 }
+const SYS_INIT = 'Sys.init'
 /*
 	Effectively calls Sys.init() except
 	- No need to put save values onto global stack because Sys.init() can't return
