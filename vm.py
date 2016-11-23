@@ -75,6 +75,30 @@ def decode(inputC,writeTo, pathInput): #gets the desired address/value from inpu
 			return "D"
 		return tempname+inputC[1]
 
+	elif inputC=="LCL":
+		print "@SP"
+		print "A=A+1"
+		print "D=M"
+		return "D"
+
+	elif inputC=="ARG":
+		print "@SP"
+		print "A=A+2"
+		print "D=M"
+		return "D"
+
+	elif inputC=="THIS":
+		print "@SP"
+		print "A=A+3"
+		print "D=M"
+		return "D"
+
+	elif inputC=="THAT":
+		print "@SP"
+		print "A=A+4"
+		print "D=M"
+		return "D"
+
 def pushC(inputC, pathInput): #loads SP value and increments it while writing a decoded input to the next SP address
 	temp = str(decode(inputC[1:], False, pathInput))
 	print "@SP"
@@ -167,18 +191,40 @@ def functionC(inputC):
 	for i in range(int(inputC[2])):
 		pushC(0,"notImportant")
 
-def callC(inputC):
-	pushC(ret, "")
-	pushC(LCL, "")
+def callC(inputC, fInput):
+	pushC(["return"+str(retct),"0"], "")
+	pushC(["LCL","0"], "")
+	pushC(["ARG","0"], "")
+	pushC(["THIS","0"], "")
+	pushC(["THAT","0"], "")
+
+	print "@"+str(-int(inputC[2])-5)
+	print "D=A"
+	print "@SP"
+	print "D=M-D"
+	print "@ARG"
+	print "M=D"
+
+	print "@SP"
+	print "D=M"
+	print "@LCL"
+	print "M=D"
+	goto(inputC, fInput)
+	labelC(inputC,"return"+str(retct))
+
+def returnC(inputC):
+
 
 pathDir = str(sys.argv[1])
 listOfFiles =  glob.glob(pathDir+"*.vm")
+retct = 0
 jumpct = 0
 currentF = "Sys.init"
 print "@256"
 print "D=A"
 print "@SP"
 print "M=D"
+callC(["","","0"],currentF)
 for path in listOfFiles:
 	with open(path) as file:
 		for line in file: #loops through standard input
@@ -220,6 +266,8 @@ for path in listOfFiles:
 				elif typeof == "if-goto":
 					ifGotoC(current, currentF)
 				elif typeof == "call":
-					callC(current)
+					callC(current, currentF)
 				elif typeof == "function":
 					functionC(current)
+				elif typeof == "return":
+					returnC(current)
