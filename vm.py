@@ -75,25 +75,25 @@ def decode(inputC,writeTo, pathInput): #gets the desired address/value from inpu
 			return "D"
 		return tempname+inputC[1]
 
-	elif inputC=="LCL":
+	elif inputC[0]=="LCL":
 		print "@SP"
 		print "A=A+1"
 		print "D=M"
 		return "D"
 
-	elif inputC=="ARG":
+	elif inputC[0]=="ARG":
 		print "@SP"
 		print "A=A+2"
 		print "D=M"
 		return "D"
 
-	elif inputC=="THIS":
+	elif inputC[0]=="THIS":
 		print "@SP"
 		print "A=A+3"
 		print "D=M"
 		return "D"
 
-	elif inputC=="THAT":
+	elif inputC[0]=="THAT":
 		print "@SP"
 		print "A=A+4"
 		print "D=M"
@@ -108,7 +108,7 @@ def pushC(inputC, pathInput): #loads SP value and increments it while writing a 
 	print "M=M+1"
 
 def popC(inputC, pathInput): #decrements from SP and writes previous value to specified address
-	temp = str(decode(inputC[1:], True), pathInput)
+	temp = str(decode(inputC[1:], True, pathInput))
 	print "@R15"
 	if temp == "D":
 		print "M=D"
@@ -174,22 +174,22 @@ def compC(inputC, typeC): #general comparative helper function. typeC is passed 
 	jumpct+=1
 
 def labelC(inputC, fInput):
-	print "("+fInput+"$"+inputC+")"
+	print "("+fInput+"$"+inputC[1]+")"
 
 def gotoC(inputC, fInput):
-	print "@"+fInput+"$"+inputC
+	print "@"+fInput+"$"+inputC[1]
 	print "0;JMP"
 
 def ifGotoC(inputC, fInput):
 	decrementSP()
 	print "D=M"
-	print "@"+fInput+"$"+inputC
+	print "@"+fInput+"$"+inputC[1]
 	print "D;JNE"
 
 def functionC(inputC):
 	currentF = inputC[1]
 	for i in range(int(inputC[2])):
-		pushC(0,"notImportant")
+		pushC(["","constant","0"],"notImportant")
 
 def callC(inputC, fInput):
 	pushC(["return"+str(retct),"0"], "")
@@ -209,22 +209,53 @@ def callC(inputC, fInput):
 	print "D=M"
 	print "@LCL"
 	print "M=D"
-	goto(inputC, fInput)
+	gotoC(inputC, fInput)
 	labelC(inputC,"return"+str(retct))
 
-def returnC(inputC):
+def restore(typeC, offset):
+	print "@"+str(offset)
+	print "D=M"
+	print "@temp"
+	print "D=M-D"
+	print "@"+typeC
+	print "M=D"
 
+def returnC(inputC):
+	print "@LCL"
+	print "D=A"
+	print "@temp"
+	print "M=D"
+	print "@5"
+	print "D=A"
+	print "@temp"
+	print "A=A-D"
+	print "D=M"
+	print "@R14"
+	print "M=D"
+
+	print "@ARG"
+	print "A=M"
+	print "M=D"
+	print "D=A+1"
+	print "@SP"
+	print "A=D"
+	restore("THAT",1)
+	restore("THIS",2)
+	restore("ARG",3)
+	restore("LCL",4)
+	print "@R14"
+	print "A=M"
+	print "0;JMP"
 
 pathDir = str(sys.argv[1])
-listOfFiles =  glob.glob(pathDir+"*.vm")
+listOfFiles =  glob.glob("."+pathDir+"/*.vm")
 retct = 0
 jumpct = 0
 currentF = "Sys.init"
-print "@256"
+print "@261"
 print "D=A"
 print "@SP"
 print "M=D"
-callC(["","","0"],currentF)
 for path in listOfFiles:
 	with open(path) as file:
 		for line in file: #loops through standard input
