@@ -60,8 +60,6 @@ def decode(inputC,writeTo, pathInput): #gets the desired address/value from inpu
 		if not writeTo:
 			print "@"+inputC[1]
 			print "D=A"
-			print "@SP"
-			print "A=M"
 			return "D"
 
 		print "why are you trying to write to a constant"
@@ -76,26 +74,34 @@ def decode(inputC,writeTo, pathInput): #gets the desired address/value from inpu
 		return tempname+inputC[1]
 
 	elif inputC[0]=="LCL":
+		print "@1"
+		print "D=M"
 		print "@SP"
-		print "A=A+1"
+		print "A=A+D"
 		print "D=M"
 		return "D"
 
 	elif inputC[0]=="ARG":
+		print "@2"
+		print "D=M"
 		print "@SP"
-		print "A=A+2"
+		print "A=A+D"
 		print "D=M"
 		return "D"
 
 	elif inputC[0]=="THIS":
+		print "@3"
+		print "D=M"
 		print "@SP"
-		print "A=A+3"
+		print "A=A+D"
 		print "D=M"
 		return "D"
 
 	elif inputC[0]=="THAT":
+		print "@4"
+		print "D=M"
 		print "@SP"
-		print "A=A+4"
+		print "A=A+D"
 		print "D=M"
 		return "D"
 
@@ -192,58 +198,74 @@ def functionC(inputC):
 		pushC(["","constant","0"],"notImportant")
 
 def callC(inputC, fInput):
-	pushC(["return"+str(retct),"0"], "")
-	pushC(["LCL","0"], "")
-	pushC(["ARG","0"], "")
-	pushC(["THIS","0"], "")
-	pushC(["THAT","0"], "")
-
-	print "@"+str(-int(inputC[2])-5)
+	print "@return"+str(retct) #push return address
 	print "D=A"
 	print "@SP"
-	print "D=M-D"
+	print "AM=M+1"
+	print "M=D"
+
+	pushC(["","LCL","0"], "") #push old LCL, ARG, THIS and THAT
+	pushC(["","ARG","0"], "")
+	pushC(["","THIS","0"], "")
+	pushC(["","THAT","0"], "")
+
+	print "@"+str(-int(inputC[2])+5) #repositioning SP to 5+n after its original value
+	print "D=A"
+	print "@SP"
+	print "D=M+D"
 	print "@ARG"
 	print "M=D"
 
-	print "@SP"
+	print "@SP" #repositioning LCL to new SP
 	print "D=M"
 	print "@LCL"
 	print "M=D"
-	gotoC(inputC, fInput)
-	labelC(inputC,"return"+str(retct))
+
+	gotoC(inputC, fInput) #jump to function
+
+	print "(return"+str(retct)+")" #return address label
+	retct+=1
 
 def restore(typeC, offset):
 	print "@"+str(offset)
-	print "D=M"
-	print "@temp"
+	print "D=A"
+	print "@R13"
 	print "D=M-D"
 	print "@"+typeC
 	print "M=D"
 
 def returnC(inputC):
-	print "@LCL"
-	print "D=A"
-	print "@temp"
+	print "@THAT" #storing THAT-- the address for THAT is used to restore LCL, ARG, THIS and THAT instead of LCL's address
+	print "D=M"
+	print "@R13"
 	print "M=D"
-	print "@5"
+
+	print "@4" #RET = *(THAT-4); that is, the stored return address
 	print "D=A"
-	print "@temp"
+	print "@R13"
 	print "A=A-D"
 	print "D=M"
 	print "@R14"
 	print "M=D"
 
+	decrementSP() #*ARG = pop()
+	print "D=M"
 	print "@ARG"
 	print "A=M"
 	print "M=D"
+
+	print "@ARG" #SP = ARG + 1
+	print "A=M"
 	print "D=A+1"
 	print "@SP"
-	print "A=D"
-	restore("THAT",1)
-	restore("THIS",2)
-	restore("ARG",3)
-	restore("LCL",4)
-	print "@R14"
+	print "M=D"
+
+	restore("THAT",0)
+	restore("THIS",1)
+	restore("ARG",2)
+	restore("LCL",3)
+
+	print "@R14" #jump to return address
 	print "A=M"
 	print "0;JMP"
 
@@ -252,10 +274,11 @@ listOfFiles =  glob.glob("."+pathDir+"/*.vm")
 retct = 0
 jumpct = 0
 currentF = "Sys.init"
-print "@261"
+print "@256"
 print "D=A"
 print "@SP"
 print "M=D"
+callC(["call","Sys.init","0"],currentF)
 for path in listOfFiles:
 	with open(path) as file:
 		for line in file: #loops through standard input
