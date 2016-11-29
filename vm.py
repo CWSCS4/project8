@@ -194,10 +194,12 @@ def ifGotoC(inputC, fInput):
 
 def functionC(inputC):
 	currentF = inputC[1]
+	print "("+currentF+")"
 	for i in range(int(inputC[2])):
 		pushC(["","constant","0"],"notImportant")
 
 def callC(inputC, fInput):
+	global retct
 	print "@return"+str(retct) #push return address
 	print "D=A"
 	print "@SP"
@@ -209,7 +211,7 @@ def callC(inputC, fInput):
 	pushC(["","THIS","0"], "")
 	pushC(["","THAT","0"], "")
 
-	print "@"+str(-int(inputC[2])+5) #repositioning SP to 5+n after its original value
+	print "@"+str(int(inputC[2])+5) #repositioning SP to 5+n after its original value
 	print "D=A"
 	print "@SP"
 	print "D=M+D"
@@ -221,7 +223,8 @@ def callC(inputC, fInput):
 	print "@LCL"
 	print "M=D"
 
-	gotoC(inputC, fInput) #jump to function
+	print "@"+fInput #jump to function
+	print "0;JMP"
 
 	print "(return"+str(retct)+")" #return address label
 	retct+=1
