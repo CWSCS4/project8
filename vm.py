@@ -245,10 +245,10 @@ def returnC(inputC):
 	print "@R13"
 	print "M=D"
 
-	print "@4" #RET = *(THAT-4); that is, the stored return address
+	print "@5" #RET = *(FRAME-5); that is, the stored return address
 	print "D=A"
 	print "@R13"
-	print "A=A-D"
+	print "A=M-D"
 	print "D=M"
 	print "@R14"
 	print "M=D"
