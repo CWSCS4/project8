@@ -193,6 +193,7 @@ def ifGotoC(inputC, fInput):
 	print "D;JNE"
 
 def functionC(inputC):
+	global currentF
 	currentF = inputC[1]
 	print "("+currentF+")"
 	for i in range(int(inputC[2])):
@@ -211,10 +212,10 @@ def callC(inputC, fInput):
 	pushC(["","THIS","0"], "")
 	pushC(["","THAT","0"], "")
 
-	print "@"+str(int(inputC[2])+5) #repositioning SP to 5+n after its original value
+	print "@"+str(int(inputC[2])+5) #repositioning ARG to 5+n after its original value
 	print "D=A"
 	print "@SP"
-	print "D=M+D"
+	print "D=M-D"
 	print "@ARG"
 	print "M=D"
 
@@ -223,7 +224,7 @@ def callC(inputC, fInput):
 	print "@LCL"
 	print "M=D"
 
-	print "@"+fInput #jump to function
+	print "@"+inputC[1] #jump to function
 	print "0;JMP"
 
 	print "(return"+str(retct)+")" #return address label
@@ -233,12 +234,13 @@ def restore(typeC, offset):
 	print "@"+str(offset)
 	print "D=A"
 	print "@R13"
-	print "D=M-D"
+	print "A=M-D"
+	print "D=M"
 	print "@"+typeC
 	print "M=D"
 
 def returnC(inputC):
-	print "@THAT" #storing THAT-- the address for THAT is used to restore LCL, ARG, THIS and THAT instead of LCL's address
+	print "@LCL" #storing LCL, which is used to restore LCL, ARG, THIS and THAT
 	print "D=M"
 	print "@R13"
 	print "M=D"
@@ -258,15 +260,14 @@ def returnC(inputC):
 	print "M=D"
 
 	print "@ARG" #SP = ARG + 1
-	print "A=M"
-	print "D=A+1"
+	print "D=M+1"
 	print "@SP"
 	print "M=D"
 
-	restore("THAT",0)
-	restore("THIS",1)
-	restore("ARG",2)
-	restore("LCL",3)
+	restore("THAT",1)
+	restore("THIS",2)
+	restore("ARG",3)
+	restore("LCL",4)
 
 	print "@R14" #jump to return address
 	print "A=M"
