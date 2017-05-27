@@ -10,6 +10,7 @@ def decrementSP(): #helper function for decrementing pointer
     print "AM=M-1"
 
 def accessLoc(inputC, writeTo, typeC): #inputC and writeTo are the same as in decode(). typeC is a string that is passed from the if statement blocks
+    #desired output is always written to D
     if not writeTo: #in decode that signifies the assembler-friendly representation of the address
         print "// Reading " + inputC[0] + " " + inputC[1] + " into D, then A=M[SP]"
         print "@"+typeC
@@ -32,6 +33,7 @@ def accessLoc(inputC, writeTo, typeC): #inputC and writeTo are the same as in de
     return "D"
 
 def decode(inputC,writeTo, pathInput): #gets the desired address/value from inputC case by case depending on whether writeTo is true/false. writeTo signifies either pop or push
+    #desired output is always written to D
     if inputC[0]=="local": #LCL, ARG, THIS and THAT are first accessed in memory by passing in relevant arguments to accessLoc() to get the value that is being stored in the respective register
         return accessLoc(inputC, writeTo, "LCL")
     elif inputC[0]=="argument":
@@ -75,7 +77,7 @@ def decode(inputC,writeTo, pathInput): #gets the desired address/value from inpu
             print "D=M"
             return "D"
         return tempname+inputC[1]
-
+    #All other cases can be handled by just loading the value at inputC[0]'s value (that is, an address)
     print "@" + inputC[0]
     print "D=M"
     return "D"
@@ -155,10 +157,10 @@ def compC(inputC, typeC): #general comparative helper function. typeC is passed 
     print "M=M+1"
     jumpct+=1
 
-def labelC(inputC, fInput):
+def labelC(inputC, fInput): #simple unique label handler based on arguments
     print "("+fInput+"$"+inputC[1]+")"
 
-def gotoC(inputC, fInput):
+def gotoC(inputC, fInput): #simple unique label jump based on arguments
     print "@"+fInput+"$"+inputC[1]
     print "0;JMP"
 
@@ -208,7 +210,8 @@ def callC(inputC, fInput):
     print "(return"+str(retct)+")" #return address label
     retct+=1
 
-def restore(typeC, offset):
+def restore(typeC, offset): #helper function to restore data after function has been completed. Takes in offset, by which it loads some value stored previously.
+    #Writes stored value into register defined by typeC.
     print "@"+str(offset)
     print "D=A"
     print "@R13"
